@@ -43,3 +43,5 @@ The majority of the time is lost during running the neural network model on the 
 Why is aiming at the current position inefficient for a moving target? How is this like a real interceptor's guidance?
 If the target is moving, there will be an added latency if we aim at the current position of the target because by the time the drone gets to that position the target has already moved and then it has to keep correcting. If tracking a moving target, velocity needs to be accounted for because we can predict where the target will be and then go to that position instead.
 
+
+Distance estimate was pretty close to the actual distance from a range of 25 cm to 1.5 m. The error was within 2-5 cm for all readings.
