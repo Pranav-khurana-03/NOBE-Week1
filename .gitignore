@@ -1,0 +1,7 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# YOLO weights (auto-downloaded on first run)
+*.pt
