@@ -10,14 +10,14 @@ It pauses the program for the specified number of ms. It waits for a key press. 
 
 
 What does YOLO return for each detection? What changes when the confidence threshold goes to 0.2 or 0.8
-Each frame returns a Frame object. The detections are in results[0].boxes
+Each frame returns a Results object. The detections are in results[0].boxes
 For every detected object you get top-left and bottom-right corner. confidence score, class ID etc. At a lower confidence rate of 0.2, more bottles that are harder to see will be detected. Gives more false positives.
 A higher confidence threshold will miss more real bottles. Few false positives.
 
 
 
 Why bottom center? What would moving the origin change about the target line?
-In  targeting displays, the shooter or launcher is pictured just below and behind the camera. Bottom center of the frame is where "you" would be. Moving the origin changes the line but not the numbers. The distance, time to hit, and bearing are measured from the center so the crosshair won't affect it. 
+In  targeting displays, the shooter or launcher is pictured just below and behind the camera. Bottom center of the frame is where "you" would be. Moving the origin changes the line but not the numbers. The bearing is measured from the image center, the distance comes from the box height, and the time to hit comes from the distance and speed, so the crosshair won't affect any of them.
 
 
 Why does calibration only need to happen once per camera? What if the bottle is tilted?
