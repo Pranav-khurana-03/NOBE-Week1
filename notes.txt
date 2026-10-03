@@ -1,0 +1,45 @@
+NOBE Week 1 - Notes
+
+Why use a virtual environment instead of installing globally?
+Because it allows different projects to have different versions of packages and dependencies won't get messy. Like if one project needs numpy 2.0 but another needs 3.0. It makes the project easily reproducible because everything is in the venv folder and can be sourced. One it's sourced you're ready to go.
+
+
+What does cv2.waitKey() do, and why does the window freeze without it?
+It pauses the program for the specified number of ms. It waits for a key press. Without calling waitKey nothing will refresh on the OpenCV window.
+
+
+
+What does YOLO return for each detection? What changes when the confidence threshold goes to 0.2 or 0.8
+Each frame returns a Frame object. The detections are in results[0].boxes
+For every detected object you get top-left and bottom-right corner. confidence score, class ID etc. At a lower confidence rate of 0.2, more bottles that are harder to see will be detected. Gives more false positives.
+A higher confidence threshold will miss more real bottles. Few false positives.
+
+
+
+Why bottom center? What would moving the origin change about the target line?
+In  targeting displays, the shooter or launcher is pictured just below and behind the camera. Bottom center of the frame is where "you" would be. Moving the origin changes the line but not the numbers. The distance, time to hit, and bearing are measured from the center so the crosshair won't affect it. 
+
+
+Why does calibration only need to happen once per camera? What if the bottle is tilted?
+The focal length is a characteristic of the camera. That does not change when the bottle moves, so one good measurement holds for every later frame. If the bottle is tilted, the measured height is less than the actual height so the calculated distance is greater than the actual distance. 
+
+
+
+Why does the distance jump when the bottle is partly off screen? How could you smooth it?
+The measure height fluctuates and jumps when the bottle is off the screen. THis causes the measured distance to also jump to higher values because the measured height is lower. It would be helpful to implement a Kalman filter in the case. Especially for the tracking based on velocity mode. Predictions can be made with a velocity model, updating with each measurement.
+
+
+
+Why use atan instead of the raw pixel offset? What does the angle read with the bottle centered?
+Pixel offsets only tell you where the bottle is on the screen. For a drone/turret to track the target, you would need an angle reading. For example if we know that our target is at a certain position, the best way to get there is to calculate the angle the drone should move at.
+
+
+
+What's slowing the FPS down, and what could speed it up?
+The majority of the time is lost during running the neural network model on the laptop CPU (I don't got a GPU unforch). But if it was run on better hardware, FPS be a lot higher. Also getting a smaller image (less pixels) would could improve. Also if we can isolate regions of interest in the image itself to isolate areas where the model detection is run, that could help as well.
+
+
+
+Why is aiming at the current position inefficient for a moving target? How is this like a real interceptor's guidance?
+If the target is moving, there will be an added latency if we aim at the current position of the target because by the time the drone gets to that position the target has already moved and then it has to keep correcting. If tracking a moving target, velocity needs to be accounted for because we can predict where the target will be and then go to that position instead.
+
