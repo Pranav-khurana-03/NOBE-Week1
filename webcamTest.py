@@ -49,6 +49,8 @@ HUD_LABEL_COLOR = (200, 200, 200)  # BGR
 HUD_VALUE_COLOR = (255, 255, 255)  # BGR
 HUD_LOCK_COLOR = (0, 255, 0)  # BGR
 FPS_SMOOTHING = 0.9  # 0 = raw per-frame FPS, closer to 1 = smoother
+BOX_HEIGHT_SMOOTHING = 0.7  # EMA factor for box height (steadies distance); 0 = raw
+CENTER_SMOOTHING = 0.5  # EMA factor for box center; kept light so fast motion doesn't lag; 0 = raw
 
 
 def draw_crosshair(img):
@@ -102,6 +104,11 @@ def all_bottles(result):
         (boxes.xyxy[i].tolist(), float(boxes.conf[i]), None if ids[i] is None else int(ids[i]))
         for i in range(len(boxes))
     ]
+
+
+def ema(prev, new, alpha):
+    """Exponential moving average: alpha * prev + (1 - alpha) * new. The first sample (prev is None) is taken as is."""
+    return new if prev is None else alpha * prev + (1 - alpha) * new
 
 
 def box_center(box):
@@ -182,23 +189,41 @@ class TargetTracker:
     def __init__(self):
         self.history = deque()  # (timestamp, position)
         self.target_id = None  # ByteTrack ID of the bottle we are following
-        self.last_center = None  # last box center in pixels, for re-locking after an ID change
+        self.last_center = None  # last raw box center in pixels, for re-locking after an ID change
+        self.smooth_height = None  # EMA of box height in pixels
+        self.smooth_center = None  # EMA of box center (x, y) in pixels
         self.missed = 0
 
     def reset(self):
         self.history.clear()
         self.target_id = None
         self.last_center = None
+        self.clear_smoothing()
         self.missed = 0
+
+    def clear_smoothing(self):
+        self.smooth_height = None
+        self.smooth_center = None
 
     def lock(self, track_id, center):
         """Follow track_id (if the tracker gave one), remember where it is, and clear the miss counter."""
         if track_id is not None:
             if self.target_id is not None and track_id != self.target_id:
                 self.history.clear()  # ID changed, so old positions may not be the same bottle
+                self.clear_smoothing()
             self.target_id = track_id
         self.last_center = center
         self.missed = 0
+
+    def smooth(self, height, center):
+        """Fold a raw box height and center into their EMAs and return the smoothed (height, center)."""
+        self.smooth_height = ema(self.smooth_height, height, BOX_HEIGHT_SMOOTHING)
+        prev_x, prev_y = self.smooth_center or (None, None)
+        self.smooth_center = (
+            ema(prev_x, center[0], CENTER_SMOOTHING),
+            ema(prev_y, center[1], CENTER_SMOOTHING),
+        )
+        return self.smooth_height, self.smooth_center
 
     def update(self, t, position):
         self.history.append((t, position))
@@ -207,6 +232,7 @@ class TargetTracker:
 
     def mark_missed(self):
         self.missed += 1
+        self.clear_smoothing()  # a stale average would drag the box when the bottle comes back
         if self.missed > TRACK_LOST_FRAMES:
             self.reset()
 
@@ -252,7 +278,7 @@ def main():
     speed = DEFAULT_SPEED_MPS
     intercept_mode = False
     tracker = TargetTracker()
-    fps = 0.0
+    fps = None
     last_time = time.perf_counter()
 
     cap = cv2.VideoCapture(0)
@@ -280,7 +306,7 @@ def main():
 
             now = time.perf_counter()
             inst_fps = 1.0 / max(now - last_time, 1e-6)
-            fps = inst_fps if fps == 0.0 else FPS_SMOOTHING * fps + (1 - FPS_SMOOTHING) * inst_fps
+            fps = ema(fps, inst_fps, FPS_SMOOTHING)
             last_time = now
 
             # Compute everything first, then draw
@@ -292,9 +318,11 @@ def main():
             intercept_px = None
             if detection is not None:
                 (x1, y1, x2, y2), conf, track_id = detection
-                tracker.lock(track_id, box_center((x1, y1, x2, y2)))
-                box_height = y2 - y1
-                cx, cy = box_center((x1, y1, x2, y2))
+                raw_center = box_center((x1, y1, x2, y2))
+                tracker.lock(track_id, raw_center)
+                # Smoothed height and center feed distance, bearing and the 3D position;
+                # the edge-clipping check below still uses the raw box.
+                box_height, (cx, cy) = tracker.smooth(y2 - y1, raw_center)
                 center = (int(cx), int(cy))
                 cv2.line(annotated, origin, center, TARGET_LINE_COLOR, TARGET_LINE_THICKNESS)
                 cv2.circle(annotated, center, 4, TARGET_LINE_COLOR, -1)

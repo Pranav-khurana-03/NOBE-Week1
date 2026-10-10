@@ -218,6 +218,8 @@ All settings are constants at the top of `webcamTest.py`.
 | `MIN_TARGET_SPEED_MPS` | `0.05` | Speed below which the target is treated as stationary |
 | `HUD_*` | | HUD position, padding, opacity, text size and colors |
 | `FPS_SMOOTHING` | `0.9` | FPS smoothing factor (0 = raw, closer to 1 = smoother) |
+| `BOX_HEIGHT_SMOOTHING` | `0.7` | EMA factor for box height, which steadies the distance estimate (0 = raw) |
+| `CENTER_SMOOTHING` | `0.5` | EMA factor for box center, kept light so fast motion doesn't lag (0 = raw) |
 
 ## Calibration results
 
