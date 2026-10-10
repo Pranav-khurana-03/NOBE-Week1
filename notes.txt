@@ -26,7 +26,7 @@ The focal length is a characteristic of the camera. That does not change when th
 
 
 Why does the distance jump when the bottle is partly off screen? How could you smooth it?
-The measure height fluctuates and jumps when the bottle is off the screen. THis causes the measured distance to also jump to higher values because the measured height is lower. It would be helpful to implement a Kalman filter in the case. Especially for the tracking based on velocity mode. Predictions can be made with a velocity model, updating with each measurement.
+The measure height fluctuates and jumps when the bottle is off the screen. THis causes the measured distance to also jump to higher values because the measured height is lower. It would be helpful to implement a Kalman filter in the case (Which is basically what the Ultralytics tracker does). Will integrate that pre-built tracker.
 
 
 

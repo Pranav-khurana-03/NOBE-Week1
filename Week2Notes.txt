@@ -1,0 +1,19 @@
+1.
+Persist makes the byte tracker preserve the ID of the detected object. It keeps a buffer of the previously detected bottles and also applies a Kalman filter to the box to predict where the bottle would appear next. Because of the buffer, if a bottle is lost briefly, it can get its old ID back.
+
+
+2.
+Give up after 30 frames of not seeing the bottle. This is what I implemented. Initially it was at 5 frames, but ByteTracker keeps buffer for 30 frames, so I matched it with my buffer as well.
+
+3.
+
+The alpha attempts to reduce noise. It works the same way as a moving average. A high alpha will be super smooth but slow to respond. Similarly, a low alpha will respond quicker to change, but will have higher jitter and std dev.
+
+4. 
+Values visible in demo video.
+When stable in the center
+STD Height: 0.12 px vs 0.06 px
+STD Center: 0.07 px vs 0.06 px
+
+5.
+Moving the timestamp after cap.read() instead of after YOLO is better because it takes into account the time it took for inference, which is decent bit and will affect calculations. Timestamping at capture takes care of that. This affects velocity calculations, which is important because the entire intercept solution relies on that.
