@@ -42,9 +42,10 @@ pip install -r requirements.txt
 ultralytics
 opencv-python
 numpy
+lap
 ```
 
-The installed versions are ultralytics 8.4.171, opencv-python 5.0.0, numpy 2.5.3 and torch 2.14.1. PyTorch is the **CPU-only** build, so inference runs on the CPU.
+`lap` is required by ByteTrack. The installed versions are ultralytics 8.4.171, opencv-python 5.0.0, numpy 2.5.3, lap 0.5.13 and torch 2.14.1. PyTorch is the **CPU-only** build, so inference runs on the CPU.
 
 The YOLO26 nano weights (`yolo26n.pt`, about 5.3 MB) download automatically on first run.
 
@@ -95,10 +96,10 @@ Values that can't be computed yet, because there's no detection or no calibratio
 
 ### 1. Detection
 
-Each frame goes through YOLO26 nano, filtered to the COCO **bottle** class (ID `39` in YOLO's 0–79 numbering) with confidence ≥ 0.5:
+Each frame goes through YOLO26 nano, filtered to the COCO **bottle** class (ID `39` in YOLO's 0–79 numbering) with confidence ≥ 0.4:
 
 ```python
-results = model(frame, classes=[BOTTLE_CLASS], conf=CONF_THRESHOLD, verbose=False)
+results = model.track(frame, persist=True, tracker="bytetrack.yaml", classes=[BOTTLE_CLASS], conf=CONF_THRESHOLD, verbose=False)
 ```
 
 In direct mode the most confident bottle is used. In intercept mode the script follows one bottle across frames (see [Intercept mode](#7-intercept-mode)).
@@ -164,7 +165,7 @@ x = (cx − w/2) × z / f
 y = (h/2 − cy) × z / f
 ```
 
-**b) Frame-to-frame tracking.** The bottle nearest the previous box center is chosen, as long as it's within `TRACK_GATE_PX` (150 px), so the script doesn't jump between bottles. The track resets after `TRACK_LOST_FRAMES` (5) frames without a match.
+**b) Frame-to-frame tracking.** `model.track(persist=True)` runs ByteTrack, which gives each bottle a persistent ID. The script locks onto the ID of the first (most confident) bottle and keeps following it, so it doesn't jump between bottles. The lock is released after `TRACK_LOST_FRAMES` (30) frames without that ID (matching ByteTrack's `track_buffer`).
 
 **c) Velocity.** A least-squares straight line is fitted to the last `VELOCITY_WINDOW_S` (0.5 s) of positions, and needs at least `MIN_TRACK_SAMPLES` (5) samples. The slope is the velocity, and the fitted value at the current time is a smoothed position. Speeds below `MIN_TARGET_SPEED_MPS` (0.05 m/s) are treated as zero, so a stationary bottle's jitter doesn't create a false lead.
 
@@ -195,7 +196,7 @@ All settings are constants at the top of `webcamTest.py`.
 | Constant | Default | Purpose |
 |---|---|---|
 | `BOTTLE_CLASS` | `39` | COCO class ID for bottle |
-| `CONF_THRESHOLD` | `0.5` | Minimum detection confidence |
+| `CONF_THRESHOLD` | `0.4` | Minimum detection confidence |
 | `CROSSHAIR_SIZE` | `20` | Crosshair arm half-length (px) |
 | `CROSSHAIR_COLOR` | `(0, 255, 0)` | Crosshair color (BGR) |
 | `CROSSHAIR_THICKNESS` | `2` | Crosshair line width |
@@ -213,8 +214,7 @@ All settings are constants at the top of `webcamTest.py`.
 | `MIN_SPEED_MPS` | `1.0` | Lowest allowed speed (prevents division by zero) |
 | `VELOCITY_WINDOW_S` | `0.5` | History length for the velocity fit |
 | `MIN_TRACK_SAMPLES` | `5` | Samples needed before velocity is trusted |
-| `TRACK_LOST_FRAMES` | `5` | Missed frames before the track resets |
-| `TRACK_GATE_PX` | `150` | Max box-center jump to count as the same bottle |
+| `TRACK_LOST_FRAMES` | `30` | Missed frames before the ID lock is released |
 | `MIN_TARGET_SPEED_MPS` | `0.05` | Speed below which the target is treated as stationary |
 | `HUD_*` | | HUD position, padding, opacity, text size and colors |
 | `FPS_SMOOTHING` | `0.9` | FPS smoothing factor (0 = raw, closer to 1 = smoother) |

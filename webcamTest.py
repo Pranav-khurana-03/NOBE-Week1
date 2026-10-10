@@ -9,7 +9,7 @@ import numpy as np
 from ultralytics import YOLO
 
 BOTTLE_CLASS = 39  # COCO class ID for "bottle"
-CONF_THRESHOLD = 0.5
+CONF_THRESHOLD = 0.4
 
 CROSSHAIR_SIZE = 20  # half-length of each arm, px
 CROSSHAIR_COLOR = (0, 255, 0)  # BGR
@@ -36,8 +36,7 @@ KEYS_SPEED_DOWN = {2621440, 2424832, 65364, 65361}  # Down, Left
 # Intercept mode (toggle with M)
 VELOCITY_WINDOW_S = 0.5  # fit velocity over this much recent history
 MIN_TRACK_SAMPLES = 5  # samples needed before a velocity is trusted
-TRACK_LOST_FRAMES = 5  # frames without the target before the track resets
-TRACK_GATE_PX = 150  # max jump in box center between frames to count as the same bottle
+TRACK_LOST_FRAMES = 30  # frames without the target before the lock is released (matches ByteTrack's track_buffer)
 MIN_TARGET_SPEED_MPS = 0.05  # slower than this is treated as stationary (filters jitter)
 
 WARN_COLOR = (0, 0, 255)  # BGR
@@ -93,9 +92,16 @@ def draw_hud(img, status, status_color, rows):
 
 
 def all_bottles(result):
-    """Return a list of ((x1, y1, x2, y2), confidence) for every detected bottle."""
+    """Return a list of ((x1, y1, x2, y2), confidence, track_id) for every tracked bottle.
+
+    track_id is None when the tracker has not assigned IDs yet.
+    """
     boxes = result.boxes
-    return [(boxes.xyxy[i].tolist(), float(boxes.conf[i])) for i in range(len(boxes))]
+    ids = boxes.id.tolist() if boxes.id is not None else [None] * len(boxes)
+    return [
+        (boxes.xyxy[i].tolist(), float(boxes.conf[i]), None if ids[i] is None else int(ids[i]))
+        for i in range(len(boxes))
+    ]
 
 
 def box_center(box):
@@ -103,22 +109,22 @@ def box_center(box):
     return (x1 + x2) / 2, (y1 + y2) / 2
 
 
-def select_bottle(detections, last_center):
+def select_bottle(detections, locked_id, last_center):
     """Pick the bottle to follow.
 
-    With no previous position, take the most confident one. Otherwise take the one
-    nearest the last position, as long as it is within TRACK_GATE_PX.
+    With no locked track ID, take the most confident one. Otherwise take the detection
+    carrying that ID. If that ID is gone (ByteTrack often assigns a new one when the
+    bottle moves fast), fall back to the detection nearest the last known position.
     """
     if not detections:
         return None
-    if last_center is None:
+    if locked_id is None:
         return max(detections, key=lambda d: d[1])
+    for d in detections:
+        if d[2] == locked_id:
+            return d
     lx, ly = last_center
-    dist, nearest = min(
-        ((math.hypot(box_center(d[0])[0] - lx, box_center(d[0])[1] - ly), d) for d in detections),
-        key=lambda pair: pair[0],
-    )
-    return nearest if dist <= TRACK_GATE_PX else None
+    return min(detections, key=lambda d: math.hypot(box_center(d[0])[0] - lx, box_center(d[0])[1] - ly))
 
 
 def focal_length(box_height):
@@ -170,24 +176,34 @@ def solve_intercept(p, v_target, interceptor_speed):
 
 
 class TargetTracker:
-    """Keeps a short history of 3D target positions and fits a constant-velocity line to it."""
+    """Remembers which tracked bottle ID is being followed, plus a short history of its
+    3D positions to which it fits a constant-velocity line."""
 
     def __init__(self):
         self.history = deque()  # (timestamp, position)
-        self.last_center = None  # last box center in pixels, for frame-to-frame association
+        self.target_id = None  # ByteTrack ID of the bottle we are following
+        self.last_center = None  # last box center in pixels, for re-locking after an ID change
         self.missed = 0
 
     def reset(self):
         self.history.clear()
+        self.target_id = None
         self.last_center = None
         self.missed = 0
 
-    def update(self, t, position, center):
+    def lock(self, track_id, center):
+        """Follow track_id (if the tracker gave one), remember where it is, and clear the miss counter."""
+        if track_id is not None:
+            if self.target_id is not None and track_id != self.target_id:
+                self.history.clear()  # ID changed, so old positions may not be the same bottle
+            self.target_id = track_id
+        self.last_center = center
+        self.missed = 0
+
+    def update(self, t, position):
         self.history.append((t, position))
         while self.history and t - self.history[0][0] > VELOCITY_WINDOW_S:
             self.history.popleft()
-        self.last_center = center
-        self.missed = 0
 
     def mark_missed(self):
         self.missed += 1
@@ -195,8 +211,11 @@ class TargetTracker:
             self.reset()
 
     def estimate(self, t_now):
-        """Return (position, velocity) at t_now from a least-squares line fit, or None if too few samples."""
+        """Return (position, velocity) at t_now from a least-squares line fit, or None if too few
+        samples or the newest one is older than VELOCITY_WINDOW_S (stale)."""
         if len(self.history) < MIN_TRACK_SAMPLES:
+            return None
+        if t_now - self.history[-1][0] > VELOCITY_WINDOW_S:
             return None
         ts = np.array([s[0] for s in self.history]) - t_now
         ps = np.array([s[1] for s in self.history])
@@ -247,7 +266,14 @@ def main():
                 print("Failed to read frame from webcam.")
                 break
 
-            results = model(frame, classes=[BOTTLE_CLASS], conf=CONF_THRESHOLD, verbose=False)
+            results = model.track(
+                frame,
+                persist=True,
+                tracker="bytetrack.yaml",
+                classes=[BOTTLE_CLASS],
+                conf=CONF_THRESHOLD,
+                verbose=False,
+            )
             annotated = results[0].plot()
             origin = draw_crosshair(annotated)
             frame_h, frame_w = frame.shape[:2]
@@ -259,13 +285,14 @@ def main():
 
             # Compute everything first, then draw
             detections = all_bottles(results[0])
-            detection = select_bottle(detections, tracker.last_center if intercept_mode else None)
+            detection = select_bottle(detections, tracker.target_id, tracker.last_center)
             box_height = clipped = f_px = conf = None
             d_cm = t_s = theta_h = theta_v = None
             target_speed = aim_h = aim_v = None
             intercept_px = None
             if detection is not None:
-                (x1, y1, x2, y2), conf = detection
+                (x1, y1, x2, y2), conf, track_id = detection
+                tracker.lock(track_id, box_center((x1, y1, x2, y2)))
                 box_height = y2 - y1
                 cx, cy = box_center((x1, y1, x2, y2))
                 center = (int(cx), int(cy))
@@ -284,8 +311,8 @@ def main():
 
                     if intercept_mode:
                         position = pixel_to_camera(cx, cy, box_height, saved_f, frame_w, frame_h)
-                        tracker.update(now, position, (cx, cy))
-            elif intercept_mode:
+                        tracker.update(now, position)
+            else:
                 tracker.mark_missed()
 
             # Intercept prediction: replaces the direct time to hit with the lead solution
