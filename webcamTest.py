@@ -9,7 +9,7 @@ import numpy as np
 from ultralytics import YOLO
 
 BOTTLE_CLASS = 39  # COCO class ID for "bottle"
-CONF_THRESHOLD = 0.4
+CONF_THRESHOLD = 0.35
 
 CROSSHAIR_SIZE = 20  # half-length of each arm, px
 CROSSHAIR_COLOR = (0, 255, 0)  # BGR
@@ -331,6 +331,9 @@ def main():
             if not ret:
                 print("Failed to read frame from webcam.")
                 break
+            # Timestamp the frame as soon as it is read, before YOLO runs, so velocity is
+            # computed over when the bottle was seen rather than when inference finished.
+            now = time.perf_counter()
 
             results = model.track(
                 frame,
@@ -344,7 +347,6 @@ def main():
             origin = draw_crosshair(annotated)
             frame_h, frame_w = frame.shape[:2]
 
-            now = time.perf_counter()
             inst_fps = 1.0 / max(now - last_time, 1e-6)
             fps = ema(fps, inst_fps, FPS_SMOOTHING)
             last_time = now

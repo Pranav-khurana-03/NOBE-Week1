@@ -96,7 +96,7 @@ Values that can't be computed yet, because there's no detection or no calibratio
 
 ### 1. Detection
 
-Each frame goes through YOLO26 nano, filtered to the COCO **bottle** class (ID `39` in YOLO's 0–79 numbering) with confidence ≥ 0.4:
+Each frame goes through YOLO26 nano, filtered to the COCO **bottle** class (ID `39` in YOLO's 0–79 numbering) with confidence ≥ 0.35:
 
 ```python
 results = model.track(frame, persist=True, tracker="bytetrack.yaml", classes=[BOTTLE_CLASS], conf=CONF_THRESHOLD, verbose=False)
@@ -196,7 +196,7 @@ All settings are constants at the top of `webcamTest.py`.
 | Constant | Default | Purpose |
 |---|---|---|
 | `BOTTLE_CLASS` | `39` | COCO class ID for bottle |
-| `CONF_THRESHOLD` | `0.4` | Minimum detection confidence |
+| `CONF_THRESHOLD` | `0.35` | Minimum detection confidence |
 | `CROSSHAIR_SIZE` | `20` | Crosshair arm half-length (px) |
 | `CROSSHAIR_COLOR` | `(0, 255, 0)` | Crosshair color (BGR) |
 | `CROSSHAIR_THICKNESS` | `2` | Crosshair line width |
