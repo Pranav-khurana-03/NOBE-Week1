@@ -51,6 +51,7 @@ HUD_LOCK_COLOR = (0, 255, 0)  # BGR
 FPS_SMOOTHING = 0.9  # 0 = raw per-frame FPS, closer to 1 = smoother
 BOX_HEIGHT_SMOOTHING = 0.7  # EMA factor for box height (steadies distance); 0 = raw
 CENTER_SMOOTHING = 0.5  # EMA factor for box center; kept light so fast motion doesn't lag; 0 = raw
+STATS_WINDOW_S = 5.0  # the HUD std-dev readout is recomputed over this many seconds
 
 
 def draw_crosshair(img):
@@ -251,6 +252,44 @@ class TargetTracker:
         return position, velocity
 
 
+class JitterStats:
+    """Collects raw and EMA-smoothed box height and center, and every STATS_WINDOW_S seconds
+    reports their standard deviations so the effect of smoothing is visible on the HUD."""
+
+    def __init__(self):
+        self.reset()
+        self.result = None  # latest (height_raw, height_ema, center_raw, center_ema), in px
+
+    def reset(self):
+        self.samples = []  # (raw_h, raw_cx, raw_cy, ema_h, ema_cx, ema_cy)
+        self.window_start = None
+        self.track_id = None
+
+    def add(self, t, track_id, raw_height, raw_center, ema_height, ema_center):
+        if track_id != self.track_id:
+            self.reset()  # a different bottle would mix two sets of positions
+            self.track_id = track_id
+        if self.window_start is None:
+            self.window_start = t
+        self.samples.append((raw_height, *raw_center, ema_height, *ema_center))
+
+    def tick(self, t):
+        """Publish new std devs once the window has elapsed, then start a fresh window."""
+        if self.window_start is None or t - self.window_start < STATS_WINDOW_S:
+            return
+        if len(self.samples) >= 2:
+            a = np.array(self.samples)
+            # Center spread is the RMS distance from the mean position: sqrt(var_x + var_y)
+            self.result = (
+                a[:, 0].std(),
+                a[:, 3].std(),
+                math.hypot(a[:, 1].std(), a[:, 2].std()),
+                math.hypot(a[:, 4].std(), a[:, 5].std()),
+            )
+        self.samples = []
+        self.window_start = t
+
+
 def load_calibration():
     try:
         with open(CALIBRATION_FILE) as f:
@@ -278,6 +317,7 @@ def main():
     speed = DEFAULT_SPEED_MPS
     intercept_mode = False
     tracker = TargetTracker()
+    stats = JitterStats()
     fps = None
     last_time = time.perf_counter()
 
@@ -323,6 +363,7 @@ def main():
                 # Smoothed height and center feed distance, bearing and the 3D position;
                 # the edge-clipping check below still uses the raw box.
                 box_height, (cx, cy) = tracker.smooth(y2 - y1, raw_center)
+                stats.add(now, track_id, y2 - y1, raw_center, box_height, (cx, cy))
                 center = (int(cx), int(cy))
                 cv2.line(annotated, origin, center, TARGET_LINE_COLOR, TARGET_LINE_THICKNESS)
                 cv2.circle(annotated, center, 4, TARGET_LINE_COLOR, -1)
@@ -364,6 +405,8 @@ def main():
                             cv2.line(annotated, origin, ip, INTERCEPT_LINE_COLOR, INTERCEPT_LINE_THICKNESS)
                             cv2.drawMarker(annotated, ip, INTERCEPT_LINE_COLOR, cv2.MARKER_TILTED_CROSS, 16, 2)
 
+            stats.tick(now)
+
             # HUD panel
             if saved_f is None:
                 status, status_color = ("TARGET - NOT CALIBRATED" if detection else "NO TARGET"), WARN_COLOR
@@ -393,6 +436,14 @@ def main():
                     ("AIM H", f"{aim_h:+.1f} deg" if aim_h is not None else na),
                     ("AIM V", f"{aim_v:+.1f} deg" if aim_v is not None else na),
                 ]
+            if stats.result is not None:
+                h_raw, h_ema, c_raw, c_ema = stats.result
+                rows += [
+                    (f"STD H {STATS_WINDOW_S:g}s", f"{h_raw:.2f} > {h_ema:.2f} px"),
+                    (f"STD C {STATS_WINDOW_S:g}s", f"{c_raw:.2f} > {c_ema:.2f} px"),
+                ]
+            else:
+                rows += [(f"STD H {STATS_WINDOW_S:g}s", na), (f"STD C {STATS_WINDOW_S:g}s", na)]
             rows += [
                 ("CONF", f"{conf:.2f}" if conf is not None else na),
                 ("FPS", f"{fps:.1f}"),

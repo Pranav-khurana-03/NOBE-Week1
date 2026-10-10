@@ -220,6 +220,7 @@ All settings are constants at the top of `webcamTest.py`.
 | `FPS_SMOOTHING` | `0.9` | FPS smoothing factor (0 = raw, closer to 1 = smoother) |
 | `BOX_HEIGHT_SMOOTHING` | `0.7` | EMA factor for box height, which steadies the distance estimate (0 = raw) |
 | `CENTER_SMOOTHING` | `0.5` | EMA factor for box center, kept light so fast motion doesn't lag (0 = raw) |
+| `STATS_WINDOW_S` | `5.0` | Seconds between refreshes of the HUD std-dev readout (`STD H` and `STD C`, shown as raw > EMA in px) |
 
 ## Calibration results
 
