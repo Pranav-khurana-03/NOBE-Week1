@@ -4,6 +4,8 @@ Live bottle detection and targeting from a webcam, built with YOLO26 nano and Op
 
 Everything lives in a single script, `webcamTest.py`.
 
+**Demo video:** [Watch the demo](https://drive.google.com/file/d/1PdqvmcR-AopW4Mz8rux87JtaY0l8S_3V/view?usp=sharing)
+
 ## Contents
 
 - [Setup](#setup)
